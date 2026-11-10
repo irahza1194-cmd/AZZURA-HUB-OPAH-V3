@@ -1,0 +1,566 @@
+-- AZZURA HUB v6 by Azhari | Malam Sama Kembar
+-- Tampilan baru (tema neon biru + tab samping) + Tembus Tembok (Noclip)
+-- ESP (Kunci, Ruby, Ayam, Minyak, Kode) + Lari + Tembus Tembok + Terang + Alarm
+local Players = game:GetService("Players")
+local RS = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local lp = Players.LocalPlayer
+
+local ALARM_JARAK = 60
+
+local function setParent(inst)
+    local ok = pcall(function()
+        inst.Parent = (gethui and gethui()) or game:GetService("CoreGui")
+    end)
+    if not ok or not inst.Parent then
+        inst.Parent = lp:WaitForChild("PlayerGui")
+    end
+end
+
+for _, place in ipairs({(gethui and gethui()) or nil, game:GetService("CoreGui"), lp:FindFirstChild("PlayerGui")}) do
+    pcall(function()
+        for _, n in ipairs({"AZZURA_HUB", "AZZURA_ESP"}) do
+            local old = place:FindFirstChild(n)
+            if old then old:Destroy() end
+        end
+    end)
+end
+
+local CFG = {
+    Musuh = true, Pemain = true, Item = true, Kunci = true, Ruby = true, Barang = true,
+    Terang = false, Alarm = true, Noclip = false,
+}
+local SPEED = {on = false, mult = 1.2, was = false, base = 16, hum = nil}
+local conns = {}
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "AZZURA_HUB"
+gui.ResetOnSpawn = false
+setParent(gui)
+
+local holder = Instance.new("Folder")
+holder.Name = "AZZURA_ESP"
+setParent(holder)
+
+local alarm = Instance.new("TextLabel")
+alarm.Size = UDim2.fromOffset(240, 32)
+alarm.Position = UDim2.new(0.5, -120, 0, 40)
+alarm.BackgroundColor3 = Color3.fromRGB(170, 20, 20)
+alarm.BackgroundTransparency = 0.25
+alarm.TextColor3 = Color3.new(1, 1, 1)
+alarm.Font = Enum.Font.GothamBold
+alarm.TextSize = 16
+alarm.Visible = false
+alarm.Parent = gui
+Instance.new("UICorner", alarm)
+
+-- ===== ESP =====
+local tracked = {}
+local COLOR = {
+    Musuh = Color3.fromRGB(255, 60, 60),
+    Pemain = Color3.fromRGB(0, 200, 255),
+    Item = Color3.fromRGB(255, 220, 60),
+    Kunci = Color3.fromRGB(60, 255, 120),
+    Ruby = Color3.fromRGB(255, 50, 200),
+    Barang = Color3.fromRGB(255, 150, 40),
+}
+
+local NAMES = {
+    {"kunci", "KUNCI", "Kunci"},
+    {"key", "KUNCI", "Kunci"},
+    {"ruby", "RUBY", "Ruby"},
+    {"rubby", "RUBY", "Ruby"},
+    {"rubi", "RUBY", "Ruby"},
+    {"ayam", "AYAM", "Barang"},
+    {"minyak", "MINYAK", "Barang"},
+    {"kode", "KODE", "Barang"},
+    {"code", "KODE", "Barang"},
+}
+
+local BLOCK = {"kayu", "wood"}
+
+local function blocked(s)
+    if not s or s == "" then return false end
+    s = s:lower()
+    for _, b in ipairs(BLOCK) do
+        if s:find(b, 1, true) then return true end
+    end
+    return false
+end
+
+local function match(s)
+    if not s or s == "" then return nil end
+    s = s:lower()
+    if s:find("keypad", 1, true) or s:find("keyboard", 1, true) then return nil end
+    for _, n in ipairs(NAMES) do
+        if s:find(n[1], 1, true) then return n[2], n[3] end
+    end
+    return nil
+end
+
+local function getPart(o)
+    if o:IsA("BasePart") then return o end
+    return o:FindFirstChild("HumanoidRootPart") or o.PrimaryPart or o:FindFirstChildWhichIsA("BasePart", true)
+end
+
+local function dupAncestor(o, kind)
+    local p = o.Parent
+    while p and p ~= workspace do
+        if tracked[p] and tracked[p].kind == kind then return true end
+        p = p.Parent
+    end
+    return false
+end
+
+local function mine(o)
+    local c = lp.Character
+    if c and o:IsDescendantOf(c) then return true end
+    local bp = lp:FindFirstChildOfClass("Backpack")
+    if bp and o:IsDescendantOf(bp) then return true end
+    return false
+end
+
+local function mk(target, kind, name, prompt)
+    if tracked[target] or dupAncestor(target, kind) or mine(target) then return end
+    local part = getPart(target)
+    if not part then return end
+    local color = COLOR[kind]
+    local h
+    if kind ~= "Item" then
+        h = Instance.new("Highlight")
+        h.Adornee = target
+        h.FillColor = color
+        h.OutlineColor = color
+        h.FillTransparency = 0.5
+        h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        h.Parent = holder
+    end
+    local b = Instance.new("BillboardGui")
+    b.Adornee = part
+    b.Size = UDim2.fromOffset(130, 28)
+    b.StudsOffset = Vector3.new(0, 3, 0)
+    b.AlwaysOnTop = true
+    b.Parent = holder
+    local t = Instance.new("TextLabel")
+    t.Size = UDim2.fromScale(1, 1)
+    t.BackgroundTransparency = 1
+    t.TextColor3 = color
+    t.TextStrokeTransparency = 0
+    t.TextScaled = true
+    t.Font = Enum.Font.GothamBold
+    t.Text = name
+    t.Parent = b
+    tracked[target] = {h = h, b = b, t = t, part = part, kind = kind, name = name, prompt = prompt}
+end
+
+local function scan(o)
+    if o:IsA("Humanoid") then
+        local m = o.Parent
+        if m and m:IsA("Model") and m ~= lp.Character then
+            local pl = Players:GetPlayerFromCharacter(m)
+            if pl then
+                mk(m, "Pemain", pl.DisplayName)
+            else
+                mk(m, "Musuh", m.Name)
+            end
+        end
+    elseif o:IsA("ProximityPrompt") or o:IsA("ClickDetector") then
+        local p = o.Parent
+        if p and p:IsA("BasePart") then
+            local ot = o:IsA("ProximityPrompt") and o.ObjectText or ""
+            local at = o:IsA("ProximityPrompt") and o.ActionText or ""
+            local pn = p.Parent and p.Parent.Name or ""
+            if blocked(p.Name) or blocked(pn) or blocked(ot) or blocked(at) then return end
+            local label, kind = match(p.Name)
+            if not label then label, kind = match(pn) end
+            if not label then label, kind = match(ot) end
+            if not label then label, kind = match(at) end
+            if label then
+                mk(p, kind, label, o)
+            else
+                mk(p, "Item", (ot ~= "" and ot) or p.Name, o)
+            end
+        end
+    elseif o:IsA("BasePart") or o:IsA("Model") or o:IsA("Tool") then
+        if blocked(o.Name) then return end
+        local label, kind = match(o.Name)
+        if not label then return end
+        if o:FindFirstChildOfClass("Humanoid") then return end
+        mk(o, kind, label)
+    end
+end
+
+for _, o in ipairs(workspace:GetDescendants()) do
+    pcall(scan, o)
+end
+table.insert(conns, workspace.DescendantAdded:Connect(function(o)
+    task.defer(function() pcall(scan, o) end)
+end))
+
+task.spawn(function()
+    while gui.Parent do
+        pcall(function()
+            local c = lp.Character
+            local hrp = c and c:FindFirstChild("HumanoidRootPart")
+            local near = math.huge
+            for k, v in pairs(tracked) do
+                local gone = (not k:IsDescendantOf(workspace)) or mine(k) or (v.prompt and not v.prompt.Parent)
+                if gone then
+                    if v.h then v.h:Destroy() end
+                    v.b:Destroy()
+                    tracked[k] = nil
+                else
+                    local d = nil
+                    if hrp and v.part.Parent then
+                        d = math.floor((v.part.Position - hrp.Position).Magnitude)
+                    end
+                    local on = CFG[v.kind]
+                    local pr = v.prompt
+                    if pr and pr:IsA("ProximityPrompt") and not pr.Enabled then on = false end
+                    if v.h then v.h.Enabled = on end
+                    v.b.Enabled = on
+                    if on and d then
+                        v.t.Text = v.name .. " [" .. d .. "m]"
+                    end
+                    if v.kind == "Musuh" and d and d < near then near = d end
+                end
+            end
+            if CFG.Alarm and near <= ALARM_JARAK then
+                alarm.Text = "BAHAYA! MUSUH " .. near .. "m"
+                alarm.Visible = true
+            else
+                alarm.Visible = false
+            end
+        end)
+        task.wait(0.25)
+    end
+end)
+
+-- ===== LARI CEPAT =====
+table.insert(conns, RS.Heartbeat:Connect(function()
+    local c = lp.Character
+    local h = c and c:FindFirstChildOfClass("Humanoid")
+    if not h then return end
+    if SPEED.on then
+        if not SPEED.was or SPEED.hum ~= h then
+            SPEED.was = true
+            SPEED.hum = h
+            SPEED.base = h.WalkSpeed
+        end
+        local target = SPEED.base * SPEED.mult
+        if h.WalkSpeed ~= target then h.WalkSpeed = target end
+    elseif SPEED.was then
+        SPEED.was = false
+        if SPEED.hum then SPEED.hum.WalkSpeed = SPEED.base end
+    end
+end))
+
+-- ===== TEMBUS TEMBOK (Noclip) =====
+local ncOrig = {}
+local ncWas = false
+local function restoreNoclip()
+    for part, val in pairs(ncOrig) do
+        pcall(function()
+            if part and part.Parent then part.CanCollide = val end
+        end)
+    end
+    ncOrig = {}
+end
+table.insert(conns, RS.Stepped:Connect(function()
+    local c = lp.Character
+    if CFG.Noclip then
+        ncWas = true
+        if not c then return end
+        for _, p in ipairs(c:GetDescendants()) do
+            if p:IsA("BasePart") then
+                if ncOrig[p] == nil then ncOrig[p] = p.CanCollide end
+                p.CanCollide = false
+            end
+        end
+    elseif ncWas then
+        ncWas = false
+        restoreNoclip()
+    end
+end))
+
+-- ===== TERANG =====
+local orig = {
+    Brightness = Lighting.Brightness,
+    ClockTime = Lighting.ClockTime,
+    FogEnd = Lighting.FogEnd,
+    Ambient = Lighting.Ambient,
+    OutdoorAmbient = Lighting.OutdoorAmbient,
+}
+local fbWas = false
+local function restoreLight()
+    for k, v in pairs(orig) do
+        pcall(function() Lighting[k] = v end)
+    end
+end
+task.spawn(function()
+    while gui.Parent do
+        pcall(function()
+            if CFG.Terang then
+                fbWas = true
+                Lighting.Brightness = 2
+                Lighting.ClockTime = 14
+                Lighting.FogEnd = 1e6
+                Lighting.Ambient = Color3.fromRGB(180, 180, 180)
+                Lighting.OutdoorAmbient = Color3.fromRGB(180, 180, 180)
+            elseif fbWas then
+                fbWas = false
+                restoreLight()
+            end
+        end)
+        task.wait(0.5)
+    end
+end)
+
+-- ===== ANTI AFK =====
+pcall(function()
+    local VU = game:GetService("VirtualUser")
+    table.insert(conns, lp.Idled:Connect(function()
+        VU:CaptureController()
+        VU:ClickButton2(Vector2.new())
+    end))
+end)
+
+-- ===== GUI (tema neon biru) =====
+local C = {
+    bg = Color3.fromRGB(10, 14, 28),
+    side = Color3.fromRGB(14, 20, 40),
+    card = Color3.fromRGB(18, 26, 52),
+    line = Color3.fromRGB(30, 110, 255),
+    accent = Color3.fromRGB(30, 120, 255),
+    text = Color3.fromRGB(225, 235, 255),
+    dim = Color3.fromRGB(130, 150, 195),
+    on = Color3.fromRGB(30, 130, 255),
+    off = Color3.fromRGB(45, 55, 85),
+}
+local W, H, TOP = 340, 235, 30
+
+local fr = Instance.new("Frame")
+fr.Size = UDim2.fromOffset(W, H)
+fr.Position = UDim2.new(0, 10, 0.15, 0)
+fr.BackgroundColor3 = C.bg
+fr.Active = true
+fr.Draggable = true
+fr.ClipsDescendants = true
+fr.Parent = gui
+Instance.new("UICorner", fr).CornerRadius = UDim.new(0, 8)
+local stroke = Instance.new("UIStroke", fr)
+stroke.Color = C.line
+stroke.Thickness = 1.5
+
+local ttl = Instance.new("TextLabel")
+ttl.Size = UDim2.new(1, -70, 0, TOP)
+ttl.Position = UDim2.new(0, 10, 0, 0)
+ttl.BackgroundTransparency = 1
+ttl.Text = "AZZURA HUB v6  |  Malam Sama Kembar"
+ttl.TextXAlignment = Enum.TextXAlignment.Left
+ttl.TextColor3 = C.text
+ttl.Font = Enum.Font.GothamBold
+ttl.TextSize = 12
+ttl.Parent = fr
+
+local function topBtn(txt, xoff, color)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.fromOffset(24, 22)
+    b.Position = UDim2.new(1, xoff, 0, 4)
+    b.Text = txt
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 14
+    b.TextColor3 = Color3.new(1, 1, 1)
+    b.BackgroundColor3 = color
+    b.Parent = fr
+    Instance.new("UICorner", b)
+    return b
+end
+local minBtn = topBtn("-", -54, Color3.fromRGB(40, 60, 120))
+local closeBtn = topBtn("X", -28, Color3.fromRGB(170, 50, 50))
+
+local body = Instance.new("Frame")
+body.Size = UDim2.new(1, 0, 1, -TOP)
+body.Position = UDim2.new(0, 0, 0, TOP)
+body.BackgroundTransparency = 1
+body.Parent = fr
+
+local sep = Instance.new("Frame")
+sep.Size = UDim2.new(1, 0, 0, 1)
+sep.BackgroundColor3 = C.line
+sep.BackgroundTransparency = 0.4
+sep.BorderSizePixel = 0
+sep.Parent = body
+
+local side = Instance.new("Frame")
+side.Size = UDim2.new(0, 96, 1, -1)
+side.Position = UDim2.new(0, 0, 0, 1)
+side.BackgroundColor3 = C.side
+side.BorderSizePixel = 0
+side.Parent = body
+
+local pages, tabBtns = {}, {}
+local function showPage(name)
+    for n, p in pairs(pages) do p.Visible = (n == name) end
+    for n, b in pairs(tabBtns) do
+        b.BackgroundColor3 = (n == name) and C.accent or C.side
+        b.TextColor3 = (n == name) and Color3.new(1, 1, 1) or C.dim
+    end
+end
+
+local function newTab(name, label, order, canvasH)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(1, -12, 0, 30)
+    b.Position = UDim2.new(0, 6, 0, 8 + (order - 1) * 36)
+    b.BackgroundColor3 = C.side
+    b.Text = label
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 13
+    b.TextColor3 = C.dim
+    b.Parent = side
+    Instance.new("UICorner", b)
+    tabBtns[name] = b
+
+    local p = Instance.new("ScrollingFrame")
+    p.Size = UDim2.new(1, -104, 1, -9)
+    p.Position = UDim2.new(0, 100, 0, 5)
+    p.BackgroundTransparency = 1
+    p.BorderSizePixel = 0
+    p.ScrollBarThickness = 3
+    p.CanvasSize = UDim2.new(0, 0, 0, canvasH)
+    p.Visible = false
+    p.Parent = body
+    pages[name] = p
+
+    b.MouseButton1Click:Connect(function() showPage(name) end)
+    return p
+end
+
+local function toggleRow(parent, label, y, tbl, key)
+    local row = Instance.new("TextButton")
+    row.Size = UDim2.new(1, -8, 0, 30)
+    row.Position = UDim2.new(0, 0, 0, y)
+    row.BackgroundColor3 = C.card
+    row.Text = ""
+    row.AutoButtonColor = false
+    row.Parent = parent
+    Instance.new("UICorner", row)
+
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1, -60, 1, 0)
+    l.Position = UDim2.new(0, 10, 0, 0)
+    l.BackgroundTransparency = 1
+    l.Text = label
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.TextColor3 = C.text
+    l.Font = Enum.Font.GothamBold
+    l.TextSize = 12
+    l.Parent = row
+
+    local sw = Instance.new("Frame")
+    sw.Size = UDim2.fromOffset(36, 18)
+    sw.Position = UDim2.new(1, -44, 0.5, -9)
+    sw.Parent = row
+    Instance.new("UICorner", sw).CornerRadius = UDim.new(1, 0)
+    local knob = Instance.new("Frame")
+    knob.Size = UDim2.fromOffset(14, 14)
+    knob.BackgroundColor3 = Color3.new(1, 1, 1)
+    knob.Parent = sw
+    Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+
+    local function refresh()
+        local v = tbl[key]
+        sw.BackgroundColor3 = v and C.on or C.off
+        knob.Position = v and UDim2.new(1, -16, 0.5, -7) or UDim2.new(0, 2, 0.5, -7)
+    end
+    row.MouseButton1Click:Connect(function()
+        tbl[key] = not tbl[key]
+        refresh()
+    end)
+    refresh()
+end
+
+-- Tab ESP
+local pEsp = newTab("esp", "ESP", 1, 200)
+toggleRow(pEsp, "ESP Musuh", 0, CFG, "Musuh")
+toggleRow(pEsp, "ESP Pemain", 34, CFG, "Pemain")
+toggleRow(pEsp, "ESP Item", 68, CFG, "Item")
+toggleRow(pEsp, "ESP Kunci", 102, CFG, "Kunci")
+toggleRow(pEsp, "ESP Ruby", 136, CFG, "Ruby")
+toggleRow(pEsp, "ESP Barang", 170, CFG, "Barang")
+
+-- Tab Gerak
+local pMove = newTab("gerak", "Gerak", 2, 140)
+toggleRow(pMove, "Lari Cepat", 0, SPEED, "on")
+
+local sRow = Instance.new("Frame")
+sRow.Size = UDim2.new(1, -8, 0, 30)
+sRow.Position = UDim2.new(0, 0, 0, 34)
+sRow.BackgroundColor3 = C.card
+sRow.Parent = pMove
+Instance.new("UICorner", sRow)
+
+local function sbtn(txt, x)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.fromOffset(32, 22)
+    b.Position = UDim2.new(0, x, 0.5, -11)
+    b.Text = txt
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 16
+    b.TextColor3 = Color3.new(1, 1, 1)
+    b.BackgroundColor3 = C.accent
+    b.Parent = sRow
+    Instance.new("UICorner", b)
+    return b
+end
+local minus, plus = sbtn("-", 8), sbtn("+", 170)
+
+local lbl = Instance.new("TextLabel")
+lbl.Size = UDim2.fromOffset(120, 30)
+lbl.Position = UDim2.new(0, 44, 0, 0)
+lbl.BackgroundTransparency = 1
+lbl.TextColor3 = C.text
+lbl.Font = Enum.Font.GothamBold
+lbl.TextSize = 12
+lbl.Parent = sRow
+local function rv() lbl.Text = "Kecepatan x" .. string.format("%.1f", SPEED.mult) end
+rv()
+minus.MouseButton1Click:Connect(function()
+    SPEED.mult = math.max(1.0, math.floor((SPEED.mult - 0.1) * 10 + 0.5) / 10)
+    rv()
+end)
+plus.MouseButton1Click:Connect(function()
+    SPEED.mult = math.min(3.0, math.floor((SPEED.mult + 0.1) * 10 + 0.5) / 10)
+    rv()
+end)
+
+toggleRow(pMove, "Tembus Tembok", 68, CFG, "Noclip")
+
+-- Tab Dunia
+local pWorld = newTab("dunia", "Dunia", 3, 80)
+toggleRow(pWorld, "Terang", 0, CFG, "Terang")
+toggleRow(pWorld, "Alarm Musuh", 34, CFG, "Alarm")
+
+showPage("esp")
+
+-- Minimize
+local mini = false
+minBtn.MouseButton1Click:Connect(function()
+    mini = not mini
+    body.Visible = not mini
+    fr.Size = mini and UDim2.fromOffset(W, TOP) or UDim2.fromOffset(W, H)
+    minBtn.Text = mini and "+" or "-"
+end)
+
+-- Close
+closeBtn.MouseButton1Click:Connect(function()
+    SPEED.on = false
+    CFG.Terang = false
+    CFG.Noclip = false
+    if SPEED.was and SPEED.hum then SPEED.hum.WalkSpeed = SPEED.base end
+    restoreLight()
+    restoreNoclip()
+    for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
+    holder:Destroy()
+    gui:Destroy()
+end)
